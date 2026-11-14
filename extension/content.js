@@ -70,10 +70,12 @@
       cmtSuffix: '',    // them vao cuoi moi comment
       cmtGapMin: 5,
       cmtGapMax: 15,
+      cmtGapUnit: 'min',  // don vi khoang cach comment: 'min' phut | 'sec' giay
       cmtMaxPerDay: 20,
       gapMin: 60,
       gapMax: 180,
-      maxPerDay: 5,
+      gapUnit: 'min',   // don vi khoang cach bai anh: 'min' phut | 'sec' giay
+      maxPerDay: 5,     // 0 = khong gioi han
       hourFrom: 8,
       hourTo: 23,
       naturalPace: true,
@@ -103,6 +105,51 @@
   let consecutiveFails = 0;
   let hiddenNoted = false;
   let outsideNoted = false;
+
+  /*
+   * MOT TAB CHAY. Moi tab Instagram deu co bang dieu khien va dung chung trang thai
+   * (localStorage): mo hai tab thi ca hai cung chay, dang cung luc, boc trung anh,
+   * gianh nhau hop tao bai. Khoa: chi tab giu khoa moi lam viec; tab khac chi xem.
+   * Khoa duoc gia han moi giay, het han sau 90 giay khong ai gia han (tab do da dong).
+   * Ma tab luu o sessionStorage nen giu nguyen khi chinh tab do nap lai (sang bai de
+   * comment). Hai tab cung gianh khoa mot luc: tab nao giu duoc 1,5 giay moi lam.
+   */
+  const LOCK_KEY = 'ig_auto_poster_lock';
+  const LOCK_TTL = 90000;
+  const TAB_ID = (() => {
+    try {
+      let id = sessionStorage.getItem('iap_tab_id');
+      if (!id) {
+        id = Math.random().toString(36).slice(2);
+        sessionStorage.setItem('iap_tab_id', id);
+      }
+      return id;
+    } catch {
+      return Math.random().toString(36).slice(2);
+    }
+  })();
+  let lockSince = 0;
+  const readLock = () => {
+    try { return JSON.parse(localStorage.getItem(LOCK_KEY)) || null; } catch { return null; }
+  };
+  /** Tab khac dang chay bot (khoa con han). */
+  const otherTabRunning = () => {
+    const l = readLock();
+    return !!l && l.id !== TAB_ID && Date.now() - l.at < LOCK_TTL;
+  };
+  /** Lay / gia han khoa cho tab nay. false: tab khac dang giu. */
+  function holdLock() {
+    const l = readLock();
+    if (l && l.id !== TAB_ID && Date.now() - l.at < LOCK_TTL) return false;
+    if (!l || l.id !== TAB_ID) lockSince = Date.now();
+    try { localStorage.setItem(LOCK_KEY, JSON.stringify({ id: TAB_ID, at: Date.now() })); } catch { /* bo qua */ }
+    return true;
+  }
+  function releaseLock() {
+    if (readLock()?.id === TAB_ID) localStorage.removeItem(LOCK_KEY);
+  }
+  /** Giu khoa du lau (hai tab khong cung bat dau) thi moi duoc lam viec. */
+  const lockReady = () => holdLock() && Date.now() - lockSince >= 1500;
 
   const today = () => new Date().toLocaleDateString('sv');
   const countToday = () => state.perDay[today()] || 0;
@@ -786,7 +833,12 @@
     await dismissOverlays();
     for (let i = 0; i < 2; i++) {
       const btn = createButton();
-      if (!btn) throw new Error(`Khong thay nut Tao (Bai viet moi). Da dang nhap chua? Cua so co qua hep khong? — ${describeScreen()}`);
+      if (!btn) {
+        const icons = [...new Set([...document.querySelectorAll('svg[aria-label]')]
+          .map((s) => s.getAttribute('aria-label').trim()).filter(Boolean))].slice(0, 15);
+        throw new Error(`Khong thay nut Tao (Bai viet moi). Da dang nhap chua? Cua so co qua hep khong? Co mo 2 tab Instagram khong? — ` +
+          `${describeScreen()} · tab ${document.hidden ? 'AN' : 'hien'}, rong ${innerWidth}px · icon tren trang: ${icons.join(' | ') || '(khong co)'}`);
+      }
       const before = new Set(document.querySelectorAll('input[type="file"]'));
       btn.click();
       await until(() => fileInput(before) || postMenuItem(btn), 6000);
@@ -1009,10 +1061,12 @@
    * Tra ve cho da bam ([fx, fy]) khi da tag, null khi khong.
    */
   async function tagOne(u, attempt, tagged, spots) {
-    const d = createScope();
+    let d = createScope();
     if (!d) throw new Error('Hop tao bai bi dong giua luc tag nguoi (co ai bam ra ngoai hop, hoac bam Esc?)');
-    const r = previewRect(d);
-    if (!r) { addLog(`Tag @${u}: khong thay anh de bam — ${describeScreen()}`, 'warn'); return null; }
+    // Anh trong hop co the chua hien xong (bai nhieu anh, tab an): doi them truoc khi bo cuoc
+    let r = previewRect(d);
+    if (!r) await until(() => (r = previewRect(d = createScope() || d)), 10000, 300);
+    if (!r) { addLog(`Tag @${u}: doi 10 giay van khong thay anh de bam — ${describeScreen()}`, 'warn'); return null; }
     addLog(`Dang tag @${u}${attempt > 1 ? ` (lan ${attempt})` : ''}...`);
 
     // Bam toi da 3 cho, moi lan gan tam anh hon: cho ngau nhien co the roi vao cho
@@ -1081,6 +1135,8 @@
   async function tagPeople(users) {
     const panel = $('iap-panel');
     panel?.classList.add('iap-ghosted');      // de bang dieu khien khong che anh khi bam theo toa do
+    // Doi anh trong hop hien xong (bai nhieu anh / tab an co the cham vai giay)
+    await until(() => previewRect(createScope()), 15000, 300);
     const tagged = new Set();
     const spots = [];                          // cho da tag trong bai nay: nguoi sau khong de len
     try {
@@ -1310,13 +1366,15 @@
   }
 
   /**
-   * Khoang cho (ms) ngau nhien trong [gapMin, gapMax] phut. Nhip tu nhien: hinh
-   * chuong quanh giua khoang, lay mau lai neu roi ra ngoai (kep ve bien se
-   * don cum o hai dau, nhin may moc hon). It nhat 1 phut.
+   * Khoang cho (ms) ngau nhien trong [gapMin, gapMax], don vi `unit` ('min' phut,
+   * 'sec' giay). Nhip tu nhien: hinh chuong quanh giua khoang, lay mau lai neu roi
+   * ra ngoai (kep ve bien se don cum o hai dau, nhin may moc hon).
+   * It nhat 1 phut (don vi phut) hoac 5 giay (don vi giay).
    */
-  function nextDelay(gapMin, gapMax, naturalPace) {
+  function nextDelay(gapMin, gapMax, naturalPace, unit = 'min') {
     if (gapMax < gapMin) [gapMin, gapMax] = [gapMax, gapMin];
-    const lo = gapMin * 60000, hi = gapMax * 60000;
+    const ms = unit === 'sec' ? 1000 : 60000;
+    const lo = gapMin * ms, hi = gapMax * ms;
     let delay;
     if (lo === hi) {
       delay = lo;
@@ -1327,21 +1385,21 @@
     } else {
       delay = lo + Math.random() * (hi - lo);
     }
-    return Math.max(60000, delay);
+    return Math.max(unit === 'sec' ? 5000 : 60000, delay);
   }
 
   /** Hen bai anh ke tiep. */
   function scheduleNext() {
-    const { gapMin, gapMax, naturalPace } = state.settings;
-    state.nextAt = alignToHours(Date.now() + nextDelay(gapMin, gapMax, naturalPace));
+    const { gapMin, gapMax, naturalPace, gapUnit } = state.settings;
+    state.nextAt = alignToHours(Date.now() + nextDelay(gapMin, gapMax, naturalPace, gapUnit));
     save(state);
     render();
   }
 
   /** Hen comment ke tiep. */
   function scheduleNextComment() {
-    const { cmtGapMin, cmtGapMax, naturalPace } = state.settings;
-    state.cmtNextAt = alignToHours(Date.now() + nextDelay(cmtGapMin, cmtGapMax, naturalPace));
+    const { cmtGapMin, cmtGapMax, naturalPace, cmtGapUnit } = state.settings;
+    state.cmtNextAt = alignToHours(Date.now() + nextDelay(cmtGapMin, cmtGapMax, naturalPace, cmtGapUnit));
     save(state);
     render();
   }
@@ -1400,9 +1458,14 @@
   }
   const keepingAlive = () => audio?.state === 'running';
 
-  /** Bot dang chay / dang lam: bat che do chay nen, bao cho background-run.js. Goi moi giay. */
+  /**
+   * Goi moi giay. Tab nay dang chay / dang lam: giu khoa "mot tab chay", bat che do
+   * chay nen, bao cho background-run.js. Tab khac dang chay thi tab nay khong lam gi.
+   */
   function syncBackgroundMode() {
-    const active = !!state.running || busy;
+    const active = busy || (!!state.running && !otherTabRunning());
+    if (active) holdLock();
+    else if (!state.running) releaseLock();
     keepAlive(active);
     document.documentElement.dataset.iapActive = active ? '1' : '';
   }
@@ -1561,7 +1624,7 @@
   /** Trang bai vua nap lai sau khi bot chuyen sang de comment: lam not. */
   async function resumeComment() {
     const p = state.cmtPending;
-    if (!p) return;
+    if (!p || otherTabRunning()) return;            // cmtPending cua tab khac (dang nap lai): khong lam thay
     busy = true;                                   // khoa ngay: runTick khong duoc chen vao comment trung
     state.cmtPending = null;                       // xoa truoc: loi gi cung khong lap vo han
     save(state);
@@ -1631,6 +1694,7 @@
   /** Den gio -> lam mot viec: comment truoc (neu den gio), roi toi bai anh. */
   function runTick() {
     if (busy || importing || !state.running || state.cmtPending) return;
+    if (!lockReady()) return;                      // tab Instagram khac dang chay bot: tab nay chi xem
     const s = state.settings;
     const now = Date.now();
     const cmt = nextComment();
@@ -1830,10 +1894,12 @@ Cau khen thu hai"></textarea>
         <div class="iap-sec">Nhip dang bai anh</div>
         <div class="iap-row">
           <label>Cach nhau</label><input id="iap-gapmin" type="number" min="1" value="60">
-          <label>den</label><input id="iap-gapmax" type="number" min="1" value="180"> <label>phut</label>
+          <label>den</label><input id="iap-gapmax" type="number" min="1" value="180">
+          <select id="iap-gapunit"><option value="min">phut</option><option value="sec">giay</option></select>
         </div>
+        <div id="iap-gap-info" class="iap-hint"></div>
         <div class="iap-row">
-          <label>Toi da</label><input id="iap-max" type="number" min="0" value="5"> <label>bai/ngay</label>
+          <label>Toi da</label><input id="iap-max" type="number" min="0" value="5"> <label>bai/ngay (0 = khong gioi han)</label>
         </div>
 
         <div class="iap-sec">Comment khen vao bai khac</div>
@@ -1848,10 +1914,12 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
         <textarea id="iap-cmt-suffix" class="iap-small" placeholder="#LenaMiu #ลีน่าหมิว"></textarea>
         <div class="iap-row">
           <label>Comment cach nhau</label><input id="iap-cmt-gapmin" type="number" min="1" value="5">
-          <label>den</label><input id="iap-cmt-gapmax" type="number" min="1" value="15"> <label>phut</label>
+          <label>den</label><input id="iap-cmt-gapmax" type="number" min="1" value="15">
+          <select id="iap-cmt-gapunit"><option value="min">phut</option><option value="sec">giay</option></select>
         </div>
+        <div id="iap-cmt-gap-info" class="iap-hint"></div>
         <div class="iap-row">
-          <label>Toi da</label><input id="iap-cmt-max" type="number" min="0" value="20"> <label>comment/ngay</label>
+          <label>Toi da</label><input id="iap-cmt-max" type="number" min="0" value="20"> <label>comment/ngay (0 = khong gioi han)</label>
         </div>
 
         <div class="iap-sec">Chung</div>
@@ -1896,8 +1964,12 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
       importFolder(list).catch((e) => { importing = false; addLog(`Loi khi nap anh: ${e.message}`, 'err'); render(); });
     });
 
+    const OTHER_TAB = 'Bot dang chay o mot tab Instagram khac. Bam Dung o tab do (hoac dong tab do, doi 1-2 phut) roi moi chay o tab nay.';
+
     $('iap-start').onclick = () => {
+      if (otherTabRunning()) return addLog(OTHER_TAB, 'warn');
       keepAlive(true, true);                       // bat am trong luc bam (trinh duyet chi cho luc nay)
+      holdLock();
       syncFromUI();
       const s = state.settings;
       const cmt = nextComment();
@@ -1925,6 +1997,8 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
 
     $('iap-now').onclick = () => {
       if (busy || importing) return addLog('Dang ban, doi chut roi bam lai.', 'warn');
+      if (otherTabRunning()) return addLog(OTHER_TAB, 'warn');
+      holdLock();
       keepAlive(true, true);
       syncFromUI();
       addLog('Dang thu 1 bai ngay (khong tinh lich).');
@@ -1933,9 +2007,11 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
 
     $('iap-cmt-now').onclick = () => {
       if (busy || importing) return addLog('Dang ban, doi chut roi bam lai.', 'warn');
+      if (otherTabRunning()) return addLog(OTHER_TAB, 'warn');
       syncFromUI();
       const job = nextComment();
       if (!job) return addLog('Khong con bai nao can comment trong list.', 'warn');
+      holdLock();
       keepAlive(true, true);
       addLog('Comment thu 1 lan ngay (khong tinh lich).');
       doComment(job);
@@ -1957,8 +2033,8 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
     };
 
     for (const id of ['iap-post-on', 'iap-imgmin', 'iap-imgmax', 'iap-ratio', 'iap-recycle', 'iap-src', 'iap-captions', 'iap-suffix', 'iap-tags',
-                      'iap-cmt-list', 'iap-cmt-times', 'iap-cmt-suffix', 'iap-cmt-gapmin', 'iap-cmt-gapmax', 'iap-cmt-max',
-                      'iap-gapmin', 'iap-gapmax', 'iap-max', 'iap-hfrom', 'iap-hto', 'iap-natural', 'iap-slow']) {
+                      'iap-cmt-list', 'iap-cmt-times', 'iap-cmt-suffix', 'iap-cmt-gapmin', 'iap-cmt-gapmax', 'iap-cmt-gapunit', 'iap-cmt-max',
+                      'iap-gapmin', 'iap-gapmax', 'iap-gapunit', 'iap-max', 'iap-hfrom', 'iap-hto', 'iap-natural', 'iap-slow']) {
       $(id).addEventListener('change', syncFromUI);
       $(id).addEventListener('input', syncFromUI);
     }
@@ -1966,11 +2042,15 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
 
   function syncFromUI() {
     const s = state.settings;
-    // Chi doc, khong ep so luc dang go: o dang "" ma bi ep ve mac dinh se nhay so
+    // Chi doc, khong ep so luc dang go: o dang "" ma bi ep ve mac dinh se nhay so.
+    // So 0 la gia tri that ("0 = khong gioi han"), khong duoc bien thanh mac dinh.
     const num = (id, def) => {
       const raw = $(id).value.trim();
-      return raw === '' ? def : Math.max(0, +raw || def);
+      const v = Number(raw);
+      return raw === '' || !Number.isFinite(v) ? def : Math.max(0, v);
     };
+    s.gapUnit = $('iap-gapunit').value === 'sec' ? 'sec' : 'min';
+    s.cmtGapUnit = $('iap-cmt-gapunit').value === 'sec' ? 'sec' : 'min';
     s.postEnabled = $('iap-post-on').checked;
     s.cmtList = $('iap-cmt-list').value;
     s.cmtTimes = Math.min(10, Math.max(1, num('iap-cmt-times', 1)));
@@ -2085,6 +2165,8 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
       nextComment() && `comment <b>${whenText(state.cmtNextAt)}</b>`].filter(Boolean).join(' · ');
     $('iap-status').innerHTML = busy ? `<b class="iap-on">● Dang lam...</b> dung dung chuot vao tab nay<br>${counts}`
       : importing ? `<b class="iap-warn">Dang nap anh...</b><br>${counts}`
+      : state.running && otherTabRunning()
+        ? `<b class="iap-warn">● Bot dang chay o mot tab Instagram khac</b> — tab nay chi xem, khong tu lam gi.<br>${counts}`
       : state.running
         ? `<b class="iap-on">● Dang chay</b> — ke tiep: ${next || '-'}<br>${counts}` +
           (keepingAlive() ? '<br><span class="iap-dim2">🔈 che do chay nen dang bat: an tab van chay</span>'
@@ -2097,6 +2179,7 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
     setVal('iap-cmt-suffix', s.cmtSuffix);
     setVal('iap-cmt-gapmin', s.cmtGapMin);
     setVal('iap-cmt-gapmax', s.cmtGapMax);
+    setVal('iap-cmt-gapunit', s.cmtGapUnit);
     setVal('iap-cmt-max', s.cmtMaxPerDay);
     setVal('iap-imgmin', s.imgMin);
     setVal('iap-imgmax', s.imgMax);
@@ -2109,6 +2192,7 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
     setVal('iap-tags', s.tags);
     setVal('iap-gapmin', s.gapMin);
     setVal('iap-gapmax', s.gapMax);
+    setVal('iap-gapunit', s.gapUnit);
     setVal('iap-max', s.maxPerDay);
     setVal('iap-hfrom', s.hourFrom);
     setVal('iap-hto', s.hourTo);
@@ -2118,7 +2202,23 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
     renderCaptionInfo();
     renderTagsInfo();
     renderCmtInfo();
+    renderGapInfo('iap-gap-info', s.gapMin, s.gapMax, s.gapUnit, s.maxPerDay, 'bai');
+    renderGapInfo('iap-cmt-gap-info', s.cmtGapMin, s.cmtGapMax, s.cmtGapUnit, s.cmtMaxPerDay, 'comment');
     renderLog();
+  }
+
+  /**
+   * Bao duoi o "cach nhau": nhip duoi 1 phut thi canh bao Instagram de chan, va nhac
+   * gioi han /ngay se cham rat nhanh (roi nghi den mai).
+   */
+  function renderGapInfo(id, lo, hi, unit, maxPerDay, what) {
+    const el = $(id);
+    if (!el) return;
+    const secHi = Math.max(lo, hi) * (unit === 'sec' ? 1 : 60);
+    if (secHi >= 60) { el.innerHTML = ''; return; }
+    el.innerHTML = `<span class="iap-warn">Nhip duoi 1 phut: Instagram rat de chan (Action blocked). Nen tang dan tu tu.` +
+      (maxPerDay > 0 ? ` Toi da ${maxPerDay} ${what}/ngay se dung lai rat nhanh roi nghi den mai; muon chay lien tuc thi dat 0.` : '') +
+      `</span>`;
   }
 
   /** Dem list comment: bao nhieu bai, xong bao nhieu, bai bo qua, dong khong phai link. */

@@ -221,6 +221,27 @@ console.log('\n5. Khung gio va nhip dang');
   check('nhip comment 5-15 phut: 300 lan deu trong khoang', bad === 0, bad);
   check('khoang dao nguoc (15-5) van dung', t.nextDelay(15, 5, false) / 60000 >= 5, null);
   check('it nhat 1 phut', t.nextDelay(0, 0, true) === 60000, t.nextDelay(0, 0, true));
+
+  // Don vi giay
+  let badSec = 0;
+  for (let i = 0; i < 300; i++) {
+    const d = t.nextDelay(10, 30, true, 'sec') / 1000;
+    if (d < 10 || d > 30) badSec++;
+  }
+  check('don vi giay: 10-30 giay, 300 lan deu trong khoang', badSec === 0, badSec);
+  check('don vi giay: it nhat 5 giay', t.nextDelay(1, 2, false, 'sec') === 5000, t.nextDelay(1, 2, false, 'sec'));
+  const ps = load({ hourFrom: 0, hourTo: 0, gapMin: 10, gapMax: 30, gapUnit: 'sec' });
+  let outSec = 0;
+  for (let i = 0; i < 300; i++) {
+    const before = Date.now();
+    ps.scheduleNext();
+    const gap = (ps.state.nextAt - before) / 1000;
+    if (gap < 10 || gap > 30.1) outSec++;
+  }
+  check('hen bai anh theo giay (10-30 giay): 300 lan deu trong khoang', outSec === 0, outSec);
+  const pm = load({ hourFrom: 0, hourTo: 0, gapMin: 1, gapMax: 2 });
+  pm.scheduleNext();
+  check('khong chon don vi (cai dat cu): van tinh la phut', (pm.state.nextAt - Date.now()) / 60000 >= 0.99, null);
 }
 
 // --- 6. comment theo list -------------------------------------------------------------

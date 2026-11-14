@@ -74,7 +74,7 @@ Gõ tên tài khoản cần tag, cách nhau bằng dấu cách hoặc xuống d�
    Lấy link: mở bài trên Instagram, bấm **…** → **Sao chép liên kết**, hoặc copy từ thanh địa chỉ. Link dạng `/p/`, `/reel/` hay `/tên/p/` đều được. Phần đuôi `?igsh=…` không sao.
 2. **Mỗi bài comment … lần**: mỗi lần là một câu khen khác nhau.
 3. **Thêm vào cuối mỗi comment**: hashtag hoặc `@tên`, dùng chung cho mọi comment. Ô này tách riêng với phần cuối của caption.
-4. Chỉnh nhịp: **comment cách nhau … phút** (mặc định 5–15) và **tối đa … comment/ngày** (mặc định 20).
+4. Chỉnh nhịp: **comment cách nhau …** (mặc định 5–15 phút; ô bên cạnh chọn **phút** hoặc **giây**) và **tối đa … comment/ngày** (mặc định 20, để `0` là không giới hạn).
 
 Cách công cụ comment:
 
@@ -89,14 +89,22 @@ Dưới ô list có dòng đếm, ví dụ `3 bai × 1 lan · xong 1/3 · ke tie
 
 ### 5. Chạy
 
-1. Ở phần **Chung**, chọn **chỉ chạy từ … đến … giờ**. Khung giờ này áp dụng cho cả đăng ảnh lẫn comment.
-2. Lần đầu, chạy thử từng việc:
+1. Chỉnh nhịp đăng ảnh:
+   - **Cách nhau … đến …**: ô bên cạnh chọn **phút** hoặc **giây**. Ví dụ chọn **giây** rồi đặt `10` đến `30` thì mỗi bài cách nhau ngẫu nhiên 10–30 giây, tính từ lúc bài trước đăng xong.
+   - **Tối đa … bài/ngày**: đặt `0` là không giới hạn. Đăng nhanh (theo giây) thì nên đặt `0`, không thì chạm giới hạn mặc định 5 bài/ngày rất nhanh rồi nghỉ đến mai.
+   - Nhịp dưới 1 phút thì bảng điều khiển hiện cảnh báo đỏ, vì Instagram rất dễ chặn khi đăng dồn dập.
+2. Ở phần **Chung**, chọn **chỉ chạy từ … đến … giờ**. Khung giờ này áp dụng cho cả đăng ảnh lẫn comment.
+3. Lần đầu, chạy thử từng việc:
    - **Đăng thử 1 bài**: bài này đăng thật. Ngồi xem công cụ làm từng bước, rồi mở trang cá nhân kiểm tra ảnh, caption và tag.
    - **Comment thử 1 lần**: comment thật vào bài đầu tiên trong list còn chưa comment.
-3. Ổn rồi thì bấm **Bắt đầu** và để yên tab đó.
+4. Ổn rồi thì bấm **Bắt đầu** và để yên tab đó.
 
 ## Cần biết
 
+- **Mỗi lúc chỉ một tab chạy.** Mở nhiều tab Instagram thì tab nào cũng có bảng điều khiển, nhưng chỉ tab bấm **Bắt đầu** mới làm việc.
+  - Các tab còn lại hiện *"Bot dang chay o mot tab Instagram khac"* và không tự đăng.
+  - Bấm nút ở tab khác thì công cụ nhắc là bot đang chạy ở tab kia.
+  - Muốn chuyển sang tab khác: bấm **Dừng** ở tab đang chạy, rồi bấm **Bắt đầu** ở tab mới. Nếu tab đang chạy bị đóng mà chưa bấm Dừng, đợi khoảng 1–2 phút thì tab khác mới chạy được.
 - **Ẩn tab vẫn chạy.** Bạn có thể chuyển sang tab khác hoặc thu nhỏ cửa sổ, chỉ cần không đóng tab Instagram và không để máy ngủ.
   - Chrome làm chậm tab ẩn, trừ tab đang phát âm thanh. Vì vậy lúc chạy, công cụ phát một âm cực nhỏ mà tai không nghe được, và tab Instagram sẽ hiện **icon loa**. Đó là âm của công cụ, đừng tắt tiếng tab.
   - Chrome chỉ cho bật âm sau một lần bấm trên trang. Bấm **Bắt đầu** là đủ. Khi trang tải lại (ví dụ lúc mở bài để comment), nếu bảng điều khiển báo *"Che do chay nen chua bat"* thì bấm vào trang Instagram một lần.
