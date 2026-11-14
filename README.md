@@ -18,8 +18,25 @@ Dùng được trên **Windows và Mac**, với **Chrome**. Các trình duyệt 
 
 1. Tải về: vào **https://github.com/dangtthuynhi/instagram-post**, bấm **`< > Code`** → **Download ZIP**. Giải nén vào một thư mục cố định, ví dụ trong **Tài liệu**. Đừng để trong **Tải xuống**: Chrome đọc trực tiếp từ thư mục này, lỡ xoá là công cụ ngừng chạy.
 2. Gõ `chrome://extensions` vào thanh địa chỉ, bật **Chế độ dành cho nhà phát triển** (góc trên bên phải).
-3. Bấm **Tải tiện ích đã giải nén**, chọn thư mục **`extension`**. Bên trong thư mục đó phải có `content.js`, `content-lenamiu.json`, `manifest.json`, `unload-guard.js`.
+3. Bấm **Tải tiện ích đã giải nén**, chọn thư mục **`extension`**. Bên trong thư mục đó phải có `background-run.js`, `content.js`, `content-lenamiu.json`, `manifest.json`, `unload-guard.js`.
 4. Mở **instagram.com** và đăng nhập. Bảng điều khiển hiện ở góc dưới bên phải; không thấy thì nhấn **F5**.
+
+## Cập nhật bản mới
+
+Cập nhật xong vẫn giữ nguyên ảnh đã chọn, câu khen đã dùng, list comment và lịch sử. Không cần chọn lại thư mục ảnh.
+
+1. Ở tab Instagram, bấm **Dừng** trên bảng điều khiển.
+2. Tải bản mới: **https://github.com/dangtthuynhi/instagram-post/archive/refs/heads/main.zip**, rồi giải nén.
+3. Mở thư mục **`extension`** trong bản vừa giải nén, chọn **tất cả file** bên trong (`Ctrl+A`, trên Mac là `Cmd+A`) và copy.
+4. Mở thư mục **`extension` cũ**, tức thư mục bạn đã chọn lúc cài. Dán vào và chọn **Thay thế các file** (*Replace*). Phải dán **đè vào đúng thư mục cũ**, vì Chrome đọc từ thư mục đó.
+5. Gõ `chrome://extensions`, tìm ô **Instagram Auto Poster** và bấm nút **↻** (Tải lại).
+6. Đóng bớt các tab Instagram, **chỉ để lại 1 tab**, rồi nhấn **F5** tab đó.
+7. Đầu bảng điều khiển phải hiện **số phiên bản mới**, ví dụ `v1.1.0`. Vẫn là số cũ thì làm lại bước 4 và 5.
+8. Bấm **Bắt đầu** để chạy lại.
+
+> Quên mất thư mục cũ ở đâu? Ở `chrome://extensions`, bấm **Chi tiết** trên ô Instagram Auto Poster, kéo xuống mục **Nguồn** để xem đường dẫn. Hoặc bấm **Xóa** extension cũ rồi cài lại từ thư mục mới như phần **Cài** ở trên. Cách này vẫn giữ nguyên ảnh và lịch sử.
+
+Ai cài bằng `git clone` thì chỉ cần `git pull`, rồi làm tiếp từ bước 5.
 
 ## Dùng
 
