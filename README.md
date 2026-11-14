@@ -34,7 +34,7 @@ Cập nhật xong vẫn giữ nguyên ảnh đã chọn, câu khen đã dùng, l
 7. Đầu bảng điều khiển phải hiện **số phiên bản mới**, ví dụ `v1.1.0`. Vẫn là số cũ thì làm lại bước 4 và 5.
 8. Bấm **Bắt đầu** để chạy lại.
 
-> Quên mất thư mục cũ ở đâu? Ở `chrome://extensions`, bấm **Chi tiết** trên ô Instagram Auto Poster, kéo xuống mục **Nguồn** để xem đường dẫn. Hoặc bấm **Xóa** extension cũ rồi cài lại từ thư mục mới như phần **Cài** ở trên. Cách này vẫn giữ nguyên ảnh và lịch sử.
+> Quên mất thư mục cũ ở đâu? Ở `chrome://extensions`, bấm **Chi tiết** trên ô Instagram Auto Poster, kéo xuống mục **Nguồn**: dòng **Đã tải từ** (*Loaded from*) là đường dẫn thư mục. Hoặc bấm **Xóa** extension cũ rồi cài lại từ thư mục mới như phần **Cài** ở trên. Cách này vẫn giữ nguyên ảnh và lịch sử.
 
 Ai cài bằng `git clone` thì chỉ cần `git pull`, rồi làm tiếp từ bước 5.
 
