@@ -57,6 +57,7 @@ Gõ tên tài khoản cần tag, cách nhau bằng dấu cách hoặc xuống d�
 - Đây là **tag trên ảnh**, giống như bạn bấm vào ảnh rồi chọn người. Người được tag nhận thông báo, và bài hiện trong mục **"Được gắn thẻ"** của họ.
 - Muốn nhắc tên trong caption nữa thì gõ `@tên` vào ô **Thêm vào cuối mỗi caption**.
 - Bài nhiều ảnh thì tag lên **ảnh đầu tiên**.
+- Mỗi người được tag ở **một chỗ ngẫu nhiên** trên ảnh, tránh mép ảnh. Người sau không đè lên tag của người trước: công cụ giữ khoảng cách với các chỗ đã tag, và đo cả nhãn tên đang hiện trên ảnh.
 - Công cụ chọn dòng kết quả đúng tên. Không có dòng nào đúng tên (ví dụ tài khoản tick xanh, tên có chữ đặc biệt) thì công cụ **lấy kết quả đầu tiên** và ghi vào nhật ký đã chọn dòng nào.
 - Mỗi người được thử **2 lần**. Lần thứ hai công cụ bấm vào chỗ khác trên ảnh và gõ chậm hơn.
 - Thử 2 lần vẫn không tag được (gõ sai tên, hoặc người đó không cho người khác tag) thì công cụ bỏ qua tên đó, ghi vào nhật ký, và bài vẫn được đăng.

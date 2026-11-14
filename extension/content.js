@@ -262,12 +262,21 @@
     return null;
   }
 
-  /** Vi tri bam tag nguoi thu i trong n nguoi: rai deu thanh luoi, ti le 0..1 tren anh. */
-  function tagSpot(i, n) {
-    const cols = Math.ceil(Math.sqrt(n));
-    const rows = Math.ceil(n / cols);
-    const at = (k, m) => (m === 1 ? 0.5 : 0.2 + (0.6 * k) / (m - 1));
-    return [at(i % cols, cols), at(Math.floor(i / cols), rows)];
+  /**
+   * Cho bam NGAU NHIEN tren anh (ti le 0..1) de tag mot nguoi. Tranh mep anh (nut
+   * chuyen anh, dong chu "Bam vao anh de gan the") va khong de len cho da tag
+   * (`used`): nhan ten rong hon cao, nen hai cho khong de nhau khi cach nhau du
+   * theo chieu ngang (gx) HOAC theo chieu doc (gy). Anh dong qua thi noi long dan.
+   */
+  function randomSpot(used, rand = Math.random) {
+    for (let scale = 1; scale > 0.15; scale -= 0.2) {
+      const gx = 0.32 * scale, gy = 0.14 * scale;
+      for (let k = 0; k < 80; k++) {
+        const p = [0.15 + rand() * 0.7, 0.15 + rand() * 0.62];
+        if (used.every(([x, y]) => Math.abs(x - p[0]) >= gx || Math.abs(y - p[1]) >= gy)) return p;
+      }
+    }
+    return [0.15 + rand() * 0.7, 0.15 + rand() * 0.62];
   }
 
   /** 'keep': Instagram nhan thang · 'convert': doi sang JPEG truoc · null: khong phai anh. */
@@ -900,28 +909,53 @@
     return { hit: null, first: false };
   }
 
+  /** Khung cac nhan tag dang hien tren anh (ten nguoi da tag), do that tren man hinh. */
+  function tagLabelRects(d, tagged) {
+    if (!tagged.size) return [];
+    const out = [];
+    for (const s of d.querySelectorAll('span')) {
+      const t = (s.textContent || '').trim().toLowerCase();
+      if (![...tagged].some((u) => t.startsWith(u)) || inEditor(s) || !linesOf(s).some((l) => tagged.has(l))) continue;
+      const b = s.getBoundingClientRect();
+      if (b.width && b.width < 400 && b.height < 120) out.push(b);
+    }
+    return out;
+  }
+
   /**
-   * Tag mot nguoi, mot lan thu: bam vao anh -> o tim mo -> go ten -> bam ket qua.
-   * Lan thu 2 bam lech cho khac va go cham hon. Tra ve true khi da tag.
+   * Chon cho bam ngau nhien tren anh: xa cac cho da tag trong bai nay (`spots`), va
+   * nhan ten se hien ra (uoc chung 150 x 55 px quanh cho bam) khong de len nhan
+   * tag nao dang hien. Tra ve { p: [fx, fy], x, y, target }.
    */
-  async function tagOne(u, i, n, attempt, tagged) {
+  function pickTagPoint(d, r, spots, tagged) {
+    const labels = tagLabelRects(d, tagged);
+    let best = null;
+    for (let k = 0; k < 40; k++) {
+      const p = randomSpot(spots);
+      const x = r.left + r.width * p[0], y = r.top + r.height * p[1];
+      const target = document.elementFromPoint(x, y);
+      best = best || { p, x, y, target };
+      const bubble = { left: x - 75, right: x + 75, top: y - 12, bottom: y + 43 };
+      const overlaps = labels.some((b) => b.left < bubble.right && b.right > bubble.left && b.top < bubble.bottom && b.bottom > bubble.top);
+      if (!overlaps && target && d.contains(target) && !linesOf(target).some((l) => tagged.has(l))) return { p, x, y, target };
+    }
+    return best;
+  }
+
+  /**
+   * Tag mot nguoi, mot lan thu: bam vao mot cho ngau nhien tren anh -> o tim mo
+   * -> go ten -> bam ket qua. Lan thu 2 bam cho khac va go cham hon.
+   * Tra ve cho da bam ([fx, fy]) khi da tag, null khi khong.
+   */
+  async function tagOne(u, attempt, tagged, spots) {
     const d = createScope();
     if (!d) throw new Error('Hop tao bai bi dong giua luc tag nguoi (co ai bam ra ngoai hop, hoac bam Esc?)');
     const r = previewRect(d);
-    if (!r) { addLog(`Tag @${u}: khong thay anh de bam — ${describeScreen()}`, 'warn'); return false; }
-    let [fx, fy] = tagSpot(i, n);
-    if (attempt > 1) fy = fy <= 0.5 ? fy + 0.2 : fy - 0.2;
-    const x = r.left + r.width * fx;
-    let y = r.top + r.height * fy;
-    let target = document.elementFromPoint(x, y);
-    // Trung nhan tag cua nguoi da tag (anh hien nho) thi dich xuong mot chut
-    for (let k = 0; k < 3 && target && linesOf(target).some((l) => tagged.has(l)); k++) {
-      y = Math.min(r.bottom - r.height * 0.08, y + r.height * 0.12);
-      target = document.elementFromPoint(x, y);
-    }
+    if (!r) { addLog(`Tag @${u}: khong thay anh de bam — ${describeScreen()}`, 'warn'); return null; }
+    const { p, x, y, target } = pickTagPoint(d, r, spots, tagged);
     if (!target || !d.contains(target)) {
       addLog(`Tag @${u} (lan ${attempt}): cho bam nam ngoai hop tao bai — ${describeScreen()}`, 'warn');
-      return false;
+      return null;
     }
 
     const before = new Set(textInputs());
@@ -930,7 +964,7 @@
     await until(() => (input = textInputs().find((el) => !before.has(el)) || focusedSearch()), 5000);
     if (!input) {
       addLog(`Tag @${u} (lan ${attempt}): bam vao anh nhung o tim nguoi khong mo.`, 'warn');
-      return false;
+      return null;
     }
 
     await pause(300 + (attempt - 1) * 700);
@@ -942,13 +976,13 @@
         `(${input.getAttribute('placeholder') || input.getAttribute('aria-label') || 'khong nhan'}); ` +
         `ket qua dang hien: ${textsNear(input, d).join(' | ') || '(khong co gi)'}`, 'warn');
       await typeSlow(input, '');
-      return false;
+      return null;
     }
     if (first) addLog(`Khong thay dong dung ten @${u}, lay ket qua dau tien: "${linesOf(hit).join(' / ')}"`, 'warn');
     pressRow(hit);
-    if (await until(() => !shown(input), 4000)) return true;
+    if (await until(() => !shown(input), 4000)) return p;
     addLog(`Tag @${u} (lan ${attempt}): da bam vao ket qua nhung o tim van mo: "${linesOf(hit).join(' / ')}"`, 'warn');
-    return false;
+    return null;
   }
 
   /**
@@ -960,6 +994,7 @@
     const panel = $('iap-panel');
     panel?.classList.add('iap-ghosted');      // de bang dieu khien khong che anh khi bam theo toa do
     const tagged = new Set();
+    const spots = [];                          // cho da tag trong bai nay: nguoi sau khong de len
     try {
       for (let i = 0; i < users.length; i++) {
         const u = users[i];
@@ -967,13 +1002,16 @@
           await until(() => !openSearch(), 3000);
           await pause(1200 + Math.random() * 800);
         }
-        let ok = false;
-        for (let attempt = 1; attempt <= 2 && !ok; attempt++) {
+        let spot = null;
+        for (let attempt = 1; attempt <= 2 && !spot; attempt++) {
           if (attempt > 1) await pause(1500);
-          ok = await tagOne(u, i, users.length, attempt, tagged);
+          spot = await tagOne(u, attempt, tagged, spots);
         }
-        if (ok) { tagged.add(u); addLog(`Da tag @${u}.`); }
-        else addLog(`Bo qua @${u}: thu 2 lan khong tag duoc.`, 'warn');
+        if (spot) {
+          spots.push(spot);
+          tagged.add(u);
+          addLog(`Da tag @${u}.`);
+        } else addLog(`Bo qua @${u}: thu 2 lan khong tag duoc.`, 'warn');
       }
     } finally {
       panel?.classList.remove('iap-ghosted');

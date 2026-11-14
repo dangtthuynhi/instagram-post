@@ -44,9 +44,9 @@ function load(settings = {}, contentData = []) {
     grabConst('MAX_CAPTION'), grabConst('MAX_HASHTAGS'), grabConst('MAX_IMAGES'),
     grabFn('parsePosts'), grabFn('parseTags'), grabFn('buildCaption'), grabFn('captionProblems'),
     grabFn('postKey'), grabFn('captionPool'), grabFn('pickCaption'), grabFn('pickImages'),
-    grabFn('parsePostLinks'), grabFn('nextComment'), grabFn('tagSpot'), grabFn('imageKind'),
+    grabFn('parsePostLinks'), grabFn('nextComment'), grabFn('randomSpot'), grabFn('imageKind'),
     grabFn('gaussian'), grabConst('inHours'), grabFn('alignToHours'), grabFn('nextDelay'), grabFn('scheduleNext'),
-    'return { parsePosts, parseTags, buildCaption, captionProblems, postKey, captionPool, pickCaption, pickImages, parsePostLinks, nextComment, tagSpot, imageKind, inHours, alignToHours, nextDelay, scheduleNext };',
+    'return { parsePosts, parseTags, buildCaption, captionProblems, postKey, captionPool, pickCaption, pickImages, parsePostLinks, nextComment, randomSpot, imageKind, inHours, alignToHours, nextDelay, scheduleNext };',
   ].join('\n');
   const fns = new Function('state', 'contentData', 'save', 'render', code)(state, contentData, () => {}, () => {});
   return { state, ...fns };
@@ -166,10 +166,23 @@ console.log('\n3. Tag nguoi');
     r.users.join(' ') === 'ling_ling orm.k abc', r);
   check('ten sai dinh dang thi bao rieng', r.bad.join(' ') === 'sai-ten', r.bad);
   check('o trong -> khong ai', t.parseTags('  \n').users.length === 0, null);
-  check('1 nguoi: bam giua anh', JSON.stringify(t.tagSpot(0, 1)) === '[0.5,0.5]', t.tagSpot(0, 1));
-  const spots = Array.from({ length: 7 }, (_, i) => t.tagSpot(i, 7));
-  check('7 nguoi: 7 cho khac nhau, nam trong 0.2-0.8 cua anh',
-    new Set(spots.map(String)).size === 7 && spots.flat().every((v) => v >= 0.2 && v <= 0.8), spots);
+  // Cho bam ngau nhien, khong de len nhau
+  const apart = (a, b, s = 1) => Math.abs(a[0] - b[0]) >= 0.32 * s - 1e-9 || Math.abs(a[1] - b[1]) >= 0.14 * s - 1e-9;
+  const inside = (p) => p[0] >= 0.15 && p[0] <= 0.85 && p[1] >= 0.15 && p[1] <= 0.77;
+  let overlap = 0, outside = 0;
+  for (let run = 0; run < 200; run++) {
+    const used = [];
+    for (let i = 0; i < 5; i++) used.push(t.randomSpot(used));
+    for (let i = 0; i < used.length; i++) for (let j = 0; j < i; j++) if (!apart(used[i], used[j])) overlap++;
+    outside += used.filter((p) => !inside(p)).length;
+  }
+  check('200 lan x 5 nguoi: khong cho nao de len cho truoc, deu nam trong vung an toan cua anh', overlap === 0 && outside === 0, { overlap, outside });
+  const firsts = new Set(Array.from({ length: 50 }, () => t.randomSpot([]).map((v) => v.toFixed(2)).join(',')));
+  check('ngau nhien: 50 lan bam dau ra nhieu cho khac nhau', firsts.size > 40, firsts.size);
+  const crowd = [];
+  for (let i = 0; i < 20; i++) crowd.push(t.randomSpot(crowd));
+  check('20 nguoi (anh dong): van ra du 20 cho trong anh, noi long dan chu khong bo cuoc',
+    crowd.length === 20 && crowd.every(inside), crowd.length);
 }
 
 // --- 4. loai file ---------------------------------------------------------------------
