@@ -28,7 +28,7 @@
   'use strict';
 
   const KEY = 'ig_auto_poster_state';
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const AUTHOR = 'dangtthuynhi';
   const REPO = 'https://github.com/dangtthuynhi/instagram-post';
   const MAX_CAPTION = 2200;   // Instagram: toi da 2.200 ky tu moi caption
@@ -266,17 +266,32 @@
    * Cho bam NGAU NHIEN tren anh (ti le 0..1) de tag mot nguoi. Tranh mep anh (nut
    * chuyen anh, dong chu "Bam vao anh de gan the") va khong de len cho da tag
    * (`used`): nhan ten rong hon cao, nen hai cho khong de nhau khi cach nhau du
-   * theo chieu ngang (gx) HOAC theo chieu doc (gy). Anh dong qua thi noi long dan.
+   * theo chieu ngang (gx) HOAC theo chieu doc (gy). Boc ngau nhien khong ra thi
+   * quet luoi (thu tu ngau nhien) tim cho con trong; het cho moi noi long dan.
+   * `box` = vung duoc bam [x0, x1, y0, y1] (mac dinh: vung an toan cua anh).
    */
-  function randomSpot(used, rand = Math.random) {
+  function randomSpot(used, rand = Math.random, box = [0.15, 0.85, 0.15, 0.77]) {
+    const [x0, x1, y0, y1] = box;
+    const roll = () => [x0 + rand() * (x1 - x0), y0 + rand() * (y1 - y0)];
     for (let scale = 1; scale > 0.15; scale -= 0.2) {
       const gx = 0.32 * scale, gy = 0.14 * scale;
-      for (let k = 0; k < 80; k++) {
-        const p = [0.15 + rand() * 0.7, 0.15 + rand() * 0.62];
-        if (used.every(([x, y]) => Math.abs(x - p[0]) >= gx || Math.abs(y - p[1]) >= gy)) return p;
+      const free = (p) => used.every(([x, y]) => Math.abs(x - p[0]) >= gx || Math.abs(y - p[1]) >= gy);
+      for (let k = 0; k < 150; k++) {
+        const p = roll();
+        if (free(p)) return p;
       }
+      const grid = [];
+      for (let i = 0; i <= 14; i++) {
+        for (let j = 0; j <= 15; j++) grid.push([x0 + ((x1 - x0) * i) / 14, y0 + ((y1 - y0) * j) / 15]);
+      }
+      for (let i = grid.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [grid[i], grid[j]] = [grid[j], grid[i]];
+      }
+      const g = grid.find(free);
+      if (g) return g;
     }
-    return [0.15 + rand() * 0.7, 0.15 + rand() * 0.62];
+    return roll();
   }
 
   /** 'keep': Instagram nhan thang · 'convert': doi sang JPEG truoc · null: khong phai anh. */
@@ -665,6 +680,15 @@
     return `dang o ${location.pathname}, ${boxes.length} hop thoai, nut: ${labels.join(' | ') || '(khong co)'}`;
   }
 
+  /** Mo ta ngan mot phan tu (loai the, role, nhan, chu) de ghi nhat ky. */
+  function describeEl(el) {
+    if (!el) return '(khong co gi)';
+    const role = el.getAttribute('role');
+    const label = el.getAttribute('aria-label') || el.getAttribute('alt') || '';
+    const text = linesOf(el).join(' / ').slice(0, 40);
+    return `<${el.tagName.toLowerCase()}${role ? ` role=${role}` : ''}>` + (label ? ` "${label.slice(0, 40)}"` : '') + (text ? ` chu "${text}"` : '');
+  }
+
   /** Chu trong hop thoai, tru phan caption (caption co the chua chu "da chia se"). */
   function textOutsideEditor(el) {
     const c = el.cloneNode(true);
@@ -727,18 +751,32 @@
       d.querySelector('[contenteditable="true"]') || d.querySelector('textarea'))) || null;
   }
 
-  /** Khung anh lon nhat trong hop (de bam tag nguoi), khong tinh phan caption. */
+  /**
+   * Phan ANH THAT trong khung: anh ngang/doc hien "vua khung" (object-fit: contain)
+   * thi tren-duoi hoac hai ben la dai trong — bam vao do Instagram khong mo o tag.
+   */
+  function photoRect(el, r) {
+    const nw = el.naturalWidth || el.videoWidth, nh = el.naturalHeight || el.videoHeight;
+    if (!nw || !nh) return r;
+    const fit = getComputedStyle(el).objectFit;
+    if (fit !== 'contain' && fit !== 'scale-down') return r;
+    const s = Math.min(r.width / nw, r.height / nh, fit === 'scale-down' ? 1 : Infinity);
+    const w = nw * s, h = nh * s;
+    return new DOMRect(r.left + (r.width - w) / 2, r.top + (r.height - h) / 2, w, h);
+  }
+
+  /** Khung anh lon nhat trong hop (de bam tag nguoi), chi phan anh that, khong tinh phan caption. */
   function previewRect(d) {
     if (!d) return null;
     const box = captionBox();
-    let best = null;
+    let best = null, bestEl = null;
     for (const el of d.querySelectorAll('img, video, canvas, div[style*="background-image"]')) {
       if (box && el.contains(box)) continue;
       const r = el.getBoundingClientRect();
       if (r.width < 150 || r.height < 150) continue;
-      if (!best || r.width * r.height > best.width * best.height) best = r;
+      if (!best || r.width * r.height > best.width * best.height) { best = r; bestEl = el; }
     }
-    return best;
+    return best && photoRect(bestEl, best);
   }
 
   /** Mo hop tao bai bang dung nut nguoi dung bam. Tra ve o chon anh. */
@@ -927,19 +965,42 @@
    * nhan ten se hien ra (uoc chung 150 x 55 px quanh cho bam) khong de len nhan
    * tag nao dang hien. Tra ve { p: [fx, fy], x, y, target }.
    */
-  function pickTagPoint(d, r, spots, tagged) {
+  function pickTagPoint(d, r, spots, tagged, box) {
     const labels = tagLabelRects(d, tagged);
+    // Khung tim nguoi cua nguoi truoc con mo (may nao chon xong khong tu dong) thi che
+    // mot phan anh: bam trung no thi tuong "ngoai hop", hoac bam nham dong ket qua
+    const pop = searchPopover(d);
+    const popAt = pop?.getBoundingClientRect();
     let best = null;
-    for (let k = 0; k < 40; k++) {
-      const p = randomSpot(spots);
+    for (let k = 0; k < 60; k++) {
+      const p = randomSpot(spots, Math.random, box);
       const x = r.left + r.width * p[0], y = r.top + r.height * p[1];
       const target = document.elementFromPoint(x, y);
-      best = best || { p, x, y, target };
+      const ok = target && d.contains(target) && !(pop && pop.contains(target));
+      if (ok && !best) best = { p, x, y, target };
+      const onPop = popAt && x >= popAt.left && x <= popAt.right && y >= popAt.top && y <= popAt.bottom;
       const bubble = { left: x - 75, right: x + 75, top: y - 12, bottom: y + 43 };
       const overlaps = labels.some((b) => b.left < bubble.right && b.right > bubble.left && b.top < bubble.bottom && b.bottom > bubble.top);
-      if (!overlaps && target && d.contains(target) && !linesOf(target).some((l) => tagged.has(l))) return { p, x, y, target };
+      if (ok && !onPop && !overlaps && !linesOf(target).some((l) => tagged.has(l))) return { p, x, y, target };
     }
-    return best;
+    if (best) return best;
+    const p = randomSpot(spots, Math.random, box);
+    const x = r.left + r.width * p[0], y = r.top + r.height * p[1];
+    return { p, x, y, target: document.elementFromPoint(x, y) };
+  }
+
+  /**
+   * Khung tim nguoi dang mo (o tim + danh sach ket qua): di len tu o tim toi tang
+   * ngay duoi khoi chua anh (khung nam trong hop), hoac toi sat body (khung gan
+   * thang vao body, ngoai hop). Khong co o tim nao mo: null.
+   */
+  function searchPopover(d) {
+    const input = openSearch();
+    if (!input) return null;
+    const media = d.querySelector('img, video, canvas') || d;
+    let el = input;
+    while (el.parentElement && el.parentElement !== document.body && !el.parentElement.contains(media)) el = el.parentElement;
+    return el;
   }
 
   /**
@@ -952,18 +1013,36 @@
     if (!d) throw new Error('Hop tao bai bi dong giua luc tag nguoi (co ai bam ra ngoai hop, hoac bam Esc?)');
     const r = previewRect(d);
     if (!r) { addLog(`Tag @${u}: khong thay anh de bam — ${describeScreen()}`, 'warn'); return null; }
-    const { p, x, y, target } = pickTagPoint(d, r, spots, tagged);
-    if (!target || !d.contains(target)) {
-      addLog(`Tag @${u} (lan ${attempt}): cho bam nam ngoai hop tao bai — ${describeScreen()}`, 'warn');
-      return null;
-    }
+    addLog(`Dang tag @${u}${attempt > 1 ? ` (lan ${attempt})` : ''}...`);
 
-    const before = new Set(textInputs());
-    pressAt(target, x, y);
-    let input = null;
-    await until(() => (input = textInputs().find((el) => !before.has(el)) || focusedSearch()), 5000);
+    // Bam toi da 3 cho, moi lan gan tam anh hon: cho ngau nhien co the roi vao cho
+    // Instagram khong nhan (vien anh, nut tren anh). O tim cua nguoi truoc con mo
+    // thi chi nhan khi no da doi cho / doi chu (Instagram dua no toi cho vua bam).
+    const BOXES = [[0.15, 0.85, 0.15, 0.77], [0.3, 0.7, 0.35, 0.65], [0.44, 0.56, 0.44, 0.56]];
+    let input = null, p = null;
+    for (let c = 0; c < BOXES.length && !input; c++) {
+      const pt = pickTagPoint(d, r, spots, tagged, BOXES[c]);
+      if (!pt?.target || !d.contains(pt.target)) {
+        addLog(`Tag @${u}: cho bam (${pt?.p.map((v) => v.toFixed(2)).join(', ')}) nam ngoai hop tao bai — ${describeScreen()}`, 'warn');
+        continue;
+      }
+      const before = new Set(textInputs());
+      const old = openSearch() || focusedSearch();
+      const oldAt = old?.getBoundingClientRect();
+      const oldVal = old?.value;
+      const fresh = (o) => !!o && (o !== old || o.value !== oldVal ||
+        Math.abs(o.getBoundingClientRect().left - oldAt.left) > 4 || Math.abs(o.getBoundingClientRect().top - oldAt.top) > 4);
+      const last = c === BOXES.length - 1;                  // lan cuoi: co o tim nao dang mo cung dung
+      pressAt(pt.target, pt.x, pt.y);
+      await until(() => (input = textInputs().find((el) => !before.has(el)) ||
+        [focusedSearch(), openSearch()].find((o) => fresh(o) || (last && o)) || null), 3500);
+      if (input) { p = pt.p; break; }
+      addLog(`Tag @${u}: bam vao anh o (${pt.p.map((v) => v.toFixed(2)).join(', ')}) nhung o tim khong mo — ` +
+        `trung ${describeEl(pt.target)}${c < BOXES.length - 1 ? ', thu bam gan giua anh hon' : ''}.`, 'warn');
+      await pause(800);
+    }
     if (!input) {
-      addLog(`Tag @${u} (lan ${attempt}): bam vao anh nhung o tim nguoi khong mo.`, 'warn');
+      addLog(`Tag @${u} (lan ${attempt}): bam 3 cho tren anh nhung o tim nguoi khong mo.`, 'warn');
       return null;
     }
 
@@ -979,9 +1058,18 @@
       return null;
     }
     if (first) addLog(`Khong thay dong dung ten @${u}, lay ket qua dau tien: "${linesOf(hit).join(' / ')}"`, 'warn');
+
+    // Da tag xong khi: o tim dong lai, HOAC o tim bi xoa trang, HOAC nhan ten moi hien tren anh.
+    // (May nao chon xong ma o tim van hien chu: truoc day bot tuong chua tag, tim lai nguoi cu.)
+    let pop = input.parentElement;                           // khung tim nguoi: phan bo chung cua o tim va dong ket qua
+    while (pop && pop !== document.body && !pop.contains(hit)) pop = pop.parentElement;
+    const labels = () => [...(createScope() || d).querySelectorAll('span')].filter((s) =>
+      (s.textContent || '').trim().toLowerCase().startsWith(u) && !(pop && pop.contains(s)) && !inEditor(s) &&
+      shown(s) && linesOf(s).includes(u)).length;
+    const labelsBefore = labels();
     pressRow(hit);
-    if (await until(() => !shown(input), 4000)) return p;
-    addLog(`Tag @${u} (lan ${attempt}): da bam vao ket qua nhung o tim van mo: "${linesOf(hit).join(' / ')}"`, 'warn');
+    if (await until(() => !shown(input) || !input.value.trim() || labels() > labelsBefore, 4000)) return p;
+    addLog(`Tag @${u} (lan ${attempt}): da bam vao ket qua nhung chua thay nhan ten tren anh, o tim van con "${input.value}"`, 'warn');
     return null;
   }
 
@@ -1279,12 +1367,15 @@
    * ra duoc, tai khong nghe) de Chrome coi tab la dang phat tieng — tab hien icon loa.
    * Phan giao dien (khung hinh) do background-run.js lo, dua vao co data-iap-active.
    *
-   * Trinh duyet chi cho bat am thanh sau mot lan bam tren trang: bat ngay trong luc
-   * bam nut cua bang dieu khien; trang nap lai (sang bai de comment) thi thu bat
-   * lai, khong duoc thi bat o lan bam chuot ke tiep tren trang.
+   * Trinh duyet chi cho bat am thanh sau mot lan bam tren trang. Tao AudioContext
+   * truoc do thi Chrome in canh bao "The AudioContext was not allowed to start" ra
+   * Console, nen CHI tao khi trang da tung duoc bam (navigator.userActivation), hoac
+   * ngay trong luc bam nut cua bang dieu khien. Trang nap lai (sang bai de comment)
+   * thi doi lan bam chuot / phim ke tiep tren trang.
    */
   let audio = null;
   let audioTriedAt = 0;
+  const pageActivated = () => !!navigator.userActivation?.hasBeenActive;
   /** `force`: dang trong luc nguoi dung bam (trinh duyet cho bat am). Khong thi 10 giay moi thu lai mot lan. */
   function keepAlive(on, force = false) {
     try {
@@ -1292,6 +1383,7 @@
         if (audio) { audio.close().catch(() => {}); audio = null; }
         return;
       }
+      if (!force && !pageActivated()) return;      // chua ai bam tren trang nay: dung tao, khoi bi canh bao
       if (!force && audio?.state === 'suspended' && Date.now() - audioTriedAt < 10000) return;
       audioTriedAt = Date.now();
       if (!audio) {
@@ -2070,7 +2162,8 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
     render();
 
     // Trang moi nap (vd bot sang bai de comment) chua duoc bat am: bat o lan bam chuot ke tiep
-    document.addEventListener('pointerdown', () => { if (state.running || busy) keepAlive(true, true); }, true);
+    const wake = () => { if (state.running || busy) keepAlive(true, true); };
+    for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, wake, true);
 
     setInterval(() => {
       if (!busy && !importing) state = load();     // dang lam viec thi giu state trong bo nho

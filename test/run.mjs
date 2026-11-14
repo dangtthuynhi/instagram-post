@@ -168,15 +168,17 @@ console.log('\n3. Tag nguoi');
   check('o trong -> khong ai', t.parseTags('  \n').users.length === 0, null);
   // Cho bam ngau nhien, khong de len nhau
   const apart = (a, b, s = 1) => Math.abs(a[0] - b[0]) >= 0.32 * s - 1e-9 || Math.abs(a[1] - b[1]) >= 0.14 * s - 1e-9;
-  const inside = (p) => p[0] >= 0.15 && p[0] <= 0.85 && p[1] >= 0.15 && p[1] <= 0.77;
+  const inside = (p) => p[0] >= 0.15 - 1e-9 && p[0] <= 0.85 + 1e-9 && p[1] >= 0.15 - 1e-9 && p[1] <= 0.77 + 1e-9;
   let overlap = 0, outside = 0;
-  for (let run = 0; run < 200; run++) {
+  for (let run = 0; run < 500; run++) {
     const used = [];
     for (let i = 0; i < 5; i++) used.push(t.randomSpot(used));
     for (let i = 0; i < used.length; i++) for (let j = 0; j < i; j++) if (!apart(used[i], used[j])) overlap++;
     outside += used.filter((p) => !inside(p)).length;
   }
-  check('200 lan x 5 nguoi: khong cho nao de len cho truoc, deu nam trong vung an toan cua anh', overlap === 0 && outside === 0, { overlap, outside });
+  check('500 lan x 5 nguoi: khong cho nao de len cho truoc, deu nam trong vung an toan cua anh', overlap === 0 && outside === 0, { overlap, outside });
+  const mid = Array.from({ length: 100 }, () => t.randomSpot([], Math.random, [0.44, 0.56, 0.44, 0.56]));
+  check('vung bam rieng (sat tam anh): cho bam nam trong vung do', mid.every((p) => p[0] >= 0.44 && p[0] <= 0.56 && p[1] >= 0.44 && p[1] <= 0.56), null);
   const firsts = new Set(Array.from({ length: 50 }, () => t.randomSpot([]).map((v) => v.toFixed(2)).join(',')));
   check('ngau nhien: 50 lan bam dau ra nhieu cho khac nhau', firsts.size > 40, firsts.size);
   const crowd = [];
