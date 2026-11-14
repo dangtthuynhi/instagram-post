@@ -1,0 +1,4 @@
+node_modules/
+# Khoa dong goi extension: giu rieng tren may, khong dua len GitHub
+*.pem
+*.crx

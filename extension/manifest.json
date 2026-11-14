@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Instagram Auto Poster",
+  "version": "1.0.0",
+  "description": "Tu dong dang anh lay ngau nhien tu mot thu muc len Instagram theo lich, kem cau khen ngau nhien va tag nguoi tren anh",
+  "author": "dangtthuynhi",
+  "homepage_url": "https://github.com/dangtthuynhi/instagram-post",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.instagram.com/*"
+      ],
+      "js": [
+        "unload-guard.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.instagram.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content-lenamiu.json"
+      ],
+      "matches": [
+        "https://www.instagram.com/*"
+      ]
+    }
+  ]
+}
