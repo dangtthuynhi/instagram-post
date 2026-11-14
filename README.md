@@ -57,7 +57,9 @@ Gõ tên tài khoản cần tag, cách nhau bằng dấu cách hoặc xuống d�
 - Đây là **tag trên ảnh**, giống như bạn bấm vào ảnh rồi chọn người. Người được tag nhận thông báo, và bài hiện trong mục **"Được gắn thẻ"** của họ.
 - Muốn nhắc tên trong caption nữa thì gõ `@tên` vào ô **Thêm vào cuối mỗi caption**.
 - Bài nhiều ảnh thì tag lên **ảnh đầu tiên**.
-- Có tên không tìm thấy (gõ sai tên, hoặc người đó không cho người khác tag) thì công cụ bỏ qua tên đó, ghi vào nhật ký, và bài vẫn được đăng.
+- Công cụ chọn dòng kết quả đúng tên. Không có dòng nào đúng tên (ví dụ tài khoản tick xanh, tên có chữ đặc biệt) thì công cụ **lấy kết quả đầu tiên** và ghi vào nhật ký đã chọn dòng nào.
+- Mỗi người được thử **2 lần**. Lần thứ hai công cụ bấm vào chỗ khác trên ảnh và gõ chậm hơn.
+- Thử 2 lần vẫn không tag được (gõ sai tên, hoặc người đó không cho người khác tag) thì công cụ bỏ qua tên đó, ghi vào nhật ký, và bài vẫn được đăng.
 
 ### 4. Comment khen vào bài khác
 
@@ -94,7 +96,10 @@ Dưới ô list có dòng đếm, ví dụ `3 bai × 1 lan · xong 1/3 · ke tie
 
 ## Cần biết
 
-- **Giữ tab Instagram mở và hiện trên màn hình.** Tab bị ẩn thì công cụ đứng chờ, mở tab lên là chạy tiếp.
+- **Ẩn tab vẫn chạy.** Bạn có thể chuyển sang tab khác hoặc thu nhỏ cửa sổ, chỉ cần không đóng tab Instagram và không để máy ngủ.
+  - Chrome làm chậm tab ẩn, trừ tab đang phát âm thanh. Vì vậy lúc chạy, công cụ phát một âm cực nhỏ mà tai không nghe được, và tab Instagram sẽ hiện **icon loa**. Đó là âm của công cụ, đừng tắt tiếng tab.
+  - Chrome chỉ cho bật âm sau một lần bấm trên trang. Bấm **Bắt đầu** là đủ. Khi trang tải lại (ví dụ lúc mở bài để comment), nếu bảng điều khiển báo *"Che do chay nen chua bat"* thì bấm vào trang Instagram một lần.
+  - Tab hiện trên màn hình vẫn là cách chạy nhanh và chắc nhất.
 - Mở cửa sổ đủ rộng để thấy thanh bên trái có nút **Tạo**.
 - **Đừng đụng chuột vào tab lúc đang đăng.** Mỗi bài mất khoảng một phút, lâu hơn nếu tag nhiều người.
 - Mặc định 5 bài ảnh/ngày (cách nhau 60–180 phút) và 20 comment/ngày (cách nhau 5–15 phút), chỉ chạy từ 8 đến 23 giờ. Instagram bắt bot gắt hơn X: đăng dày, comment dồn dập, hoặc tag cùng một nhóm người liên tục, dễ bị chặn ("Action blocked") hoặc bị bắt xác minh tài khoản.
@@ -121,7 +126,12 @@ Kèm theo là hai dòng **"Nút trong hộp"** và **"Icon trên trang"**, ghi t
 
 Phần comment: mở một bài bất kỳ, rồi bấm **Kiểm tra trang**. Nhật ký ghi công cụ có thấy ô bình luận và nút Đăng hay không.
 
-**Tag không được.** Nhật ký sẽ ghi một dòng kiểu `Khong tim thay @ten de tag. O tim dang co "...", quanh o tim dang hien: ...`, cho biết công cụ đã gõ gì vào ô tìm và Instagram hiện ra kết quả nào. Gửi lại dòng đó để sửa.
+**Tag không được.** Nhật ký ghi từng người: `Da tag @ten.`, hoặc dòng báo lỗi của từng lần thử:
+
+- `Tag @ten (lan 1): bam vao anh nhung o tim nguoi khong mo.`: Instagram không mở ô tìm người.
+- `Tag @ten (lan 1): khong tim thay. O tim dang co "...", ket qua dang hien: ...`: công cụ đã gõ gì vào ô tìm, và Instagram hiện ra kết quả nào.
+
+Gửi lại các dòng đó để sửa.
 
 Nhật ký chi tiết cũng có trong DevTools (F12 → Console), tìm các dòng bắt đầu bằng `[ig-poster]`.
 

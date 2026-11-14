@@ -844,7 +844,7 @@
   const textsNear = (input, dialog) => tagResults(input, dialog).map((r) => linesOf(r).join(' / ')).slice(0, 6);
 
   /** Go tung ky tu nhu nguoi go: o tim cua Instagram co the chi tim khi thay phim go. */
-  async function typeSlow(input, text) {
+  async function typeSlow(input, text, gap = 60) {
     input.focus();
     input.select?.();
     try { document.execCommand('delete'); } catch { /* bo qua */ }
@@ -862,82 +862,123 @@
         input.dispatchEvent(new Event('input', { bubbles: true }));
       }
       input.dispatchEvent(new KeyboardEvent('keyup', k));
-      await sleep(60 + Math.random() * 90);
+      await sleep(gap + Math.random() * gap * 1.5);
     }
   }
 
+  /** O tim nguoi dang mo: o moi hien ra sau khi bam anh, hoac o tim Instagram dung lai va dat con tro vao. */
+  const focusedSearch = () => {
+    const a = document.activeElement;
+    return a?.tagName === 'INPUT' && RE.search.test(a.placeholder || a.getAttribute('aria-label') || '') && shown(a) ? a : null;
+  };
+  const openSearch = () => textInputs().find((el) => RE.search.test(el.placeholder || el.getAttribute('aria-label') || '')) || null;
+
   /**
-   * Tag tung nguoi len anh dau tien: bam vao mot cho tren anh, Instagram mo o
-   * tim nguoi; go ten, bam dung ket qua trung ten. Ten khong tim thay thi bo qua.
-   * Tra ve so nguoi da tag.
+   * Doi ket qua tim nguoi. Uu tien dong dung ten. Khong co (ten tick xanh, chu dac
+   * biet...) thi lay KET QUA DAU TIEN — nhung chi khi danh sach da doi theo chu vua
+   * go va dung yen (khong lay nham goi y co san). 6 giay chua co ket qua moi thi go
+   * lai ten cham hon: lan tim lien tiep thu hai Instagram hay khong tra ket qua.
+   */
+  async function waitTagResult(input, d, u, sigBefore, timeout) {
+    const t0 = Date.now();
+    let lastSig = null, stableAt = Date.now(), retyped = false;
+    while (Date.now() - t0 < timeout * paceFactor()) {
+      const rows = tagResults(input, d);
+      const exact = rows.find((row) => isUserRow(row, u));
+      if (exact) return { hit: exact, first: false };
+      const sig = sigOf(rows);
+      if (sig !== lastSig) { lastSig = sig; stableAt = Date.now(); }
+      if (rows.length && sig !== sigBefore && Date.now() - t0 > 2500 && Date.now() - stableAt > 1200) {
+        return { hit: rows.find((row) => (linesOf(row)[0] || '').includes(u)) || rows[0], first: true };
+      }
+      if (!retyped && Date.now() - t0 > 6000 && (!rows.length || sig === sigBefore)) {
+        retyped = true;
+        await typeSlow(input, u, 150);
+      }
+      await sleep(300);
+    }
+    return { hit: null, first: false };
+  }
+
+  /**
+   * Tag mot nguoi, mot lan thu: bam vao anh -> o tim mo -> go ten -> bam ket qua.
+   * Lan thu 2 bam lech cho khac va go cham hon. Tra ve true khi da tag.
+   */
+  async function tagOne(u, i, n, attempt, tagged) {
+    const d = createScope();
+    if (!d) throw new Error('Hop tao bai bi dong giua luc tag nguoi (co ai bam ra ngoai hop, hoac bam Esc?)');
+    const r = previewRect(d);
+    if (!r) { addLog(`Tag @${u}: khong thay anh de bam — ${describeScreen()}`, 'warn'); return false; }
+    let [fx, fy] = tagSpot(i, n);
+    if (attempt > 1) fy = fy <= 0.5 ? fy + 0.2 : fy - 0.2;
+    const x = r.left + r.width * fx;
+    let y = r.top + r.height * fy;
+    let target = document.elementFromPoint(x, y);
+    // Trung nhan tag cua nguoi da tag (anh hien nho) thi dich xuong mot chut
+    for (let k = 0; k < 3 && target && linesOf(target).some((l) => tagged.has(l)); k++) {
+      y = Math.min(r.bottom - r.height * 0.08, y + r.height * 0.12);
+      target = document.elementFromPoint(x, y);
+    }
+    if (!target || !d.contains(target)) {
+      addLog(`Tag @${u} (lan ${attempt}): cho bam nam ngoai hop tao bai — ${describeScreen()}`, 'warn');
+      return false;
+    }
+
+    const before = new Set(textInputs());
+    pressAt(target, x, y);
+    let input = null;
+    await until(() => (input = textInputs().find((el) => !before.has(el)) || focusedSearch()), 5000);
+    if (!input) {
+      addLog(`Tag @${u} (lan ${attempt}): bam vao anh nhung o tim nguoi khong mo.`, 'warn');
+      return false;
+    }
+
+    await pause(300 + (attempt - 1) * 700);
+    const sigBefore = sigOf(tagResults(input, d));        // goi y co san truoc khi go: khong duoc lay nham
+    await typeSlow(input, u, attempt > 1 ? 130 : 60);
+    const { hit, first } = await waitTagResult(input, d, u, sigBefore, 15000);
+    if (!hit) {
+      addLog(`Tag @${u} (lan ${attempt}): khong tim thay. O tim dang co "${input.value}" ` +
+        `(${input.getAttribute('placeholder') || input.getAttribute('aria-label') || 'khong nhan'}); ` +
+        `ket qua dang hien: ${textsNear(input, d).join(' | ') || '(khong co gi)'}`, 'warn');
+      await typeSlow(input, '');
+      return false;
+    }
+    if (first) addLog(`Khong thay dong dung ten @${u}, lay ket qua dau tien: "${linesOf(hit).join(' / ')}"`, 'warn');
+    pressRow(hit);
+    if (await until(() => !shown(input), 4000)) return true;
+    addLog(`Tag @${u} (lan ${attempt}): da bam vao ket qua nhung o tim van mo: "${linesOf(hit).join(' / ')}"`, 'warn');
+    return false;
+  }
+
+  /**
+   * Tag tung nguoi len anh dau tien, moi nguoi thu toi da 2 lan. Giua hai nguoi:
+   * doi o tim cua nguoi truoc dong han va nghi mot chut — bam qua som sau khi vua
+   * gan the, Instagram bo qua cu bam (may cham hay gap). Tra ve so nguoi da tag.
    */
   async function tagPeople(users) {
     const panel = $('iap-panel');
     panel?.classList.add('iap-ghosted');      // de bang dieu khien khong che anh khi bam theo toa do
-    let done = 0;
+    const tagged = new Set();
     try {
       for (let i = 0; i < users.length; i++) {
         const u = users[i];
-        const d = createScope();
-        if (!d) throw new Error('Hop tao bai bi dong giua luc tag nguoi (co ai bam ra ngoai hop, hoac bam Esc?)');
-        const r = previewRect(d);
-        if (!r) { addLog(`Khong thay anh de bam tag nguoi, bo qua phan tag — ${describeScreen()}`, 'warn'); break; }
-        const [fx, fy] = tagSpot(i, users.length);
-        const x = r.left + r.width * fx, y = r.top + r.height * fy;
-        const target = document.elementFromPoint(x, y);
-        if (!target || !d.contains(target)) {
-          addLog(`Cho bam de tag nam ngoai hop tao bai, bo qua phan tag — ${describeScreen()}`, 'warn');
-          break;
+        if (i > 0) {
+          await until(() => !openSearch(), 3000);
+          await pause(1200 + Math.random() * 800);
         }
-        const before = new Set(textInputs());
-        pressAt(target, x, y);
-        // O tim nguoi: o moi hien ra, hoac o tim cu Instagram dung lai va dat con tro vao
-        const focusedSearch = () => {
-          const a = document.activeElement;
-          return a?.tagName === 'INPUT' && RE.search.test(a.placeholder || '') && shown(a) ? a : null;
-        };
-        let input = null;
-        await until(() => (input = textInputs().find((el) => !before.has(el)) || focusedSearch()), 5000);
-        if (!input) { addLog(`Bam vao anh nhung khong mo o tim nguoi de tag — ${describeScreen()}`, 'warn'); break; }
-
-        await pause(300);
-        const sigBefore = sigOf(tagResults(input, d));      // goi y co san truoc khi go: khong duoc lay nham
-        await typeSlow(input, u);
-
-        // Uu tien dong dung ten. Khong co (ten tick xanh, chu dac biet...) thi lay
-        // KET QUA DAU TIEN — nhung chi khi danh sach da doi theo chu vua go va dung yen.
-        const t0 = Date.now();
-        let hit = null, first = false, lastSig = '', stableAt = Date.now();
-        await until(() => {
-          const rows = tagResults(input, d);
-          const exact = rows.find((row) => isUserRow(row, u));
-          if (exact) { hit = exact; return true; }
-          const sig = sigOf(rows);
-          if (sig !== lastSig) { lastSig = sig; stableAt = Date.now(); }
-          if (rows.length && sig !== sigBefore && Date.now() - t0 > 2500 && Date.now() - stableAt > 1200) {
-            hit = rows.find((row) => (linesOf(row)[0] || '').includes(u)) || rows[0];
-            first = true;
-            return true;
-          }
-          return false;
-        }, 12000, 300);
-        if (!hit) {
-          addLog(`Khong tim thay @${u} de tag. O tim dang co "${input.value}" ` +
-            `(${input.getAttribute('placeholder') || input.getAttribute('aria-label') || 'khong nhan'}); ` +
-            `ket qua dang hien: ${textsNear(input, d).join(' | ') || '(khong co gi)'}`, 'warn');
-          await typeSlow(input, '');
-          continue;
+        let ok = false;
+        for (let attempt = 1; attempt <= 2 && !ok; attempt++) {
+          if (attempt > 1) await pause(1500);
+          ok = await tagOne(u, i, users.length, attempt, tagged);
         }
-        if (first) addLog(`Khong thay dong dung ten @${u}, lay ket qua dau tien: "${linesOf(hit).join(' / ')}"`, 'warn');
-        pressRow(hit);
-        if (await until(() => !shown(input), 4000)) done++;
-        else addLog(`Da bam vao @${u} trong ket qua nhung o tim van mo: "${linesOf(hit).join(' / ')}"`, 'warn');
-        await pause(700 + Math.random() * 600);
+        if (ok) { tagged.add(u); addLog(`Da tag @${u}.`); }
+        else addLog(`Bo qua @${u}: thu 2 lan khong tag duoc.`, 'warn');
       }
     } finally {
       panel?.classList.remove('iap-ghosted');
     }
-    return done;
+    return tagged.size;
   }
 
   /** Doi Instagram bao da chia se. Bao loi ro rang thi danh dau "chua dang" de anh duoc dung lai. */
@@ -1191,16 +1232,50 @@
   /** Ma bai dang mo (dia chi /p/MA/, /reel/MA/, /ten/p/MA/), hoac null. */
   const currentCode = () => location.pathname.match(/^\/(?:[^/]+\/)?(?:p|reels?|tv)\/([A-Za-z0-9_-]+)/)?.[1] || null;
 
-  /** Doi tab hien len (Chrome ngung ve trang o tab an). */
-  const whenVisible = () => new Promise((resolve) => {
-    if (!document.hidden) return resolve();
-    const on = () => {
-      if (document.hidden) return;
-      document.removeEventListener('visibilitychange', on);
-      resolve();
-    };
-    document.addEventListener('visibilitychange', on);
-  });
+  // ---------------------------------------------------------------- chay khi tab an
+
+  /*
+   * Chrome lam cham tab an: hen gio toi da 1 lan/giay, an lau (> 5 phut) chi con
+   * 1 lan/phut, va co the "dong bang" ca tab. Tab DANG PHAT TIENG thi khong bi vay.
+   * Nen luc bot chay, phat mot am cuc nho (30 Hz, -60 dB: loa may tinh khong phat
+   * ra duoc, tai khong nghe) de Chrome coi tab la dang phat tieng — tab hien icon loa.
+   * Phan giao dien (khung hinh) do background-run.js lo, dua vao co data-iap-active.
+   *
+   * Trinh duyet chi cho bat am thanh sau mot lan bam tren trang: bat ngay trong luc
+   * bam nut cua bang dieu khien; trang nap lai (sang bai de comment) thi thu bat
+   * lai, khong duoc thi bat o lan bam chuot ke tiep tren trang.
+   */
+  let audio = null;
+  let audioTriedAt = 0;
+  /** `force`: dang trong luc nguoi dung bam (trinh duyet cho bat am). Khong thi 10 giay moi thu lai mot lan. */
+  function keepAlive(on, force = false) {
+    try {
+      if (!on) {
+        if (audio) { audio.close().catch(() => {}); audio = null; }
+        return;
+      }
+      if (!force && audio?.state === 'suspended' && Date.now() - audioTriedAt < 10000) return;
+      audioTriedAt = Date.now();
+      if (!audio) {
+        audio = new AudioContext();
+        const osc = audio.createOscillator();
+        const gain = audio.createGain();
+        osc.frequency.value = 30;
+        gain.gain.value = 0.001;
+        osc.connect(gain).connect(audio.destination);
+        osc.start();
+      }
+      if (audio.state === 'suspended') audio.resume().catch(() => {});
+    } catch { /* trinh duyet khong cho thi thoi: van chay, chi cham hon khi tab an */ }
+  }
+  const keepingAlive = () => audio?.state === 'running';
+
+  /** Bot dang chay / dang lam: bat che do chay nen, bao cho background-run.js. Goi moi giay. */
+  function syncBackgroundMode() {
+    const active = !!state.running || busy;
+    keepAlive(active);
+    document.documentElement.dataset.iapActive = active ? '1' : '';
+  }
 
   /** O binh luan cua bai dang mo: theo nhan "Them binh luan...", khong thi textarea trong form cua bai. */
   function commentBox() {
@@ -1367,8 +1442,6 @@
         await failComment(job, new Error(`Mo bai ${p.code} nhung trang lai o ${location.pathname} (chua dang nhap?)`));
         return;
       }
-      if (document.hidden) addLog('Tab Instagram dang an, doi tab hien lai de comment.', 'warn');
-      await whenVisible();
       await doComment(job);
     } finally {
       if (!state.cmtPending) busy = false;
@@ -1436,13 +1509,13 @@
     const postDue = s.postEnabled && now >= state.nextAt;
     if (!cmtDue && !postDue) return;
 
-    // Tab an thi Chrome ngung ve trang: cho tab hien lai roi moi lam
-    if (document.hidden) {
-      if (!hiddenNoted) addLog('Tab Instagram dang an, doi tab hien lai moi lam tiep.', 'warn');
-      hiddenNoted = true;
-      return;
+    // Tab an van chay tiep (xem "chay khi tab an"); chi bao mot lan moi lan an
+    if (document.hidden && !hiddenNoted) {
+      addLog(keepingAlive()
+        ? 'Tab Instagram dang an: van chay tiep (che do chay nen dang bat).'
+        : 'Tab Instagram dang an: van chay tiep nhung co the cham. Bam vao trang Instagram mot lan de bat che do chay nen.', 'warn');
     }
-    hiddenNoted = false;
+    hiddenNoted = document.hidden;
 
     if (!inHours(new Date())) {
       const at = alignToHours(now);
@@ -1485,7 +1558,8 @@
    */
   function diagnose() {
     const yes = (v) => (v ? 'co' : 'KHONG');
-    addLog(`Kiem tra: dang o ${location.pathname} · tab ${document.hidden ? 'AN' : 'hien'} · cua so rong ${innerWidth}px`);
+    addLog(`Kiem tra: dang o ${location.pathname} · tab ${document.hidden ? 'AN' : 'hien'} · cua so rong ${innerWidth}px` +
+      ` · che do chay nen: ${keepingAlive() ? 'bat' : 'chua bat'}`);
     addLog(`Nut Tao: ${yes(createButton())} · thu muc anh: ${state.folder?.keys?.length ? `${state.folder.keys.length} anh` : 'CHUA CHON'}` +
       ` · kho cau khen: ${contentData.length} cau`,
       createButton() ? 'ok' : 'warn');
@@ -1693,6 +1767,7 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
     });
 
     $('iap-start').onclick = () => {
+      keepAlive(true, true);                       // bat am trong luc bam (trinh duyet chi cho luc nay)
       syncFromUI();
       const s = state.settings;
       const cmt = nextComment();
@@ -1720,6 +1795,7 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
 
     $('iap-now').onclick = () => {
       if (busy || importing) return addLog('Dang ban, doi chut roi bam lai.', 'warn');
+      keepAlive(true, true);
       syncFromUI();
       addLog('Dang thu 1 bai ngay (khong tinh lich).');
       doJob();
@@ -1730,6 +1806,7 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
       syncFromUI();
       const job = nextComment();
       if (!job) return addLog('Khong con bai nao can comment trong list.', 'warn');
+      keepAlive(true, true);
       addLog('Comment thu 1 lan ngay (khong tinh lich).');
       doComment(job);
     };
@@ -1880,7 +1957,8 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
       : importing ? `<b class="iap-warn">Dang nap anh...</b><br>${counts}`
       : state.running
         ? `<b class="iap-on">● Dang chay</b> — ke tiep: ${next || '-'}<br>${counts}` +
-          (document.hidden ? '<br><span class="iap-warn">⏸ tab dang an, mo tab Instagram len de chay tiep</span>' : '')
+          (keepingAlive() ? '<br><span class="iap-dim2">🔈 che do chay nen dang bat: an tab van chay</span>'
+            : '<br><span class="iap-warn">Che do chay nen chua bat: bam vao trang Instagram mot lan (an tab se chay cham)</span>')
         : `<b class="iap-dim2">○ Dang dung</b> — ${counts}`;
 
     setVal('iap-post-on', s.postEnabled);
@@ -1953,9 +2031,13 @@ https://www.instagram.com/reel/DEF456uvw/"></textarea>
     await loadBank();
     render();
 
+    // Trang moi nap (vd bot sang bai de comment) chua duoc bat am: bat o lan bam chuot ke tiep
+    document.addEventListener('pointerdown', () => { if (state.running || busy) keepAlive(true, true); }, true);
+
     setInterval(() => {
       if (!busy && !importing) state = load();     // dang lam viec thi giu state trong bo nho
       if (!$('iap-panel')) buildPanel();
+      syncBackgroundMode();
       runTick();
       render();
     }, 1000);
