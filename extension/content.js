@@ -299,6 +299,10 @@
   let bankLongest = '';
   async function loadBank() {
     try {
+      // Bam Reload extension ma chua F5 tab: ban cu con chay nhung mat ket noi voi extension
+      if (typeof chrome === 'undefined' || !chrome.runtime?.getURL) {
+        throw new Error('extension vua duoc cap nhat — nhan F5 tab Instagram nay');
+      }
       const res = await fetch(chrome.runtime.getURL(BANK));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -443,7 +447,7 @@
     postItem: /^(post|bài viết|โพสต์)$/i,
     next: /^(next|tiếp|tiếp theo|ถัดไป)$/i,
     share: /^(share|chia sẻ|แชร์)$/i,
-    crop: /^(select crop|crop|chọn cắt|chọn khung cắt|cắt|เลือกการครอบตัด|ครอบตัด)$/i,
+    crop: /crop|cắt|ครอบตัด/i,     // nhan icon chon ti le: "Select crop", "Chon ... cat"...
     original: /^(original|gốc|ảnh gốc|bản gốc|ต้นฉบับ)$/i,
     close: /^(close|đóng|ปิด)$/i,
     discard: /^(discard|bỏ|hủy bỏ|huỷ bỏ|ทิ้ง)$/i,
@@ -812,33 +816,32 @@
   };
 
   /**
-   * Dong ket qua dung ten `user` trong o tim nguoi de tag. Tim quanh o tim truoc
-   * (di len tu o tim), roi moi tim trong ca hop tao bai. Khong tim ngoai hop:
-   * trang phia sau (vd trang ca nhan cua chinh nguoi do) cung co ten nay.
+   * Cac dong ket qua cua o tim nguoi de tag, theo thu tu tren xuong. Khung ket qua
+   * cua Instagram co the nam NGOAI hop tao bai (gan thang vao body) va sau 5-6 tang:
+   * di len tu o tim, lay tang gan nhat co dong chu. O tim nam trong hop thi khong
+   * lan ra ngoai hop (trang phia sau, vd trang ca nhan cua chinh nguoi do, cung co ten nay).
    */
-  function tagResult(user, input, dialog) {
+  function tagResults(input, dialog) {
     const inDialog = dialog.contains(input);
-    for (let box = input.parentElement, i = 0; box && box !== document.body && i < 8; box = box.parentElement, i++) {
-      if (inDialog ? !dialog.contains(box) : i >= 4) break;     // khong lan ra trang phia sau hop
-      const hit = [...box.querySelectorAll(ROWS)]
-        .find((r) => !r.contains(input) && shown(r) && !inEditor(r) && isUserRow(r, user));
-      if (hit) return hit;
+    for (let box = input.parentElement, i = 0; box && box !== document.body && i < 12; box = box.parentElement, i++) {
+      if (inDialog && !dialog.contains(box)) break;
+      const rows = [...box.querySelectorAll(ROWS)].filter((r) => {
+        if (r.contains(input) || !shown(r) || inEditor(r) || r.closest('#iap-panel')) return false;
+        const lines = linesOf(r);
+        return lines.length > 0 && lines.length <= 4 && !RE.cancel.test(lines[0]) && !RE.close.test(lines[0]);
+      });
+      // Dong long nhau (div bam duoc chua link) thi giu dong ngoai cung
+      const outer = rows.filter((r) => !rows.some((o) => o !== r && o.contains(r)));
+      if (outer.length) return outer;
     }
-    for (const s of dialog.querySelectorAll('span, div')) {
-      if (!(s.textContent || '').trim().toLowerCase().startsWith(user)) continue;
-      if (inEditor(s) || !shown(s) || s.contains(input) || !isUserRow(s, user)) continue;
-      return s.closest(ROWS) || s;
-    }
-    return null;
+    return [];
   }
 
-  /** Chu cac dong dang hien quanh o tim (de ghi nhat ky khi khong tim thay). */
-  function textsNear(input) {
-    let box = input.parentElement;
-    for (let i = 0; i < 4 && box?.parentElement && box.parentElement !== document.body; i++) box = box.parentElement;
-    return [...new Set([...(box?.querySelectorAll(ROWS) || [])]
-      .filter((r) => !r.contains(input) && shown(r)).map((r) => linesOf(r).join(' / ')).filter(Boolean))].slice(0, 6);
-  }
+  /** "Chu ky" cua danh sach ket qua, de biet danh sach da doi theo chu vua go chua. */
+  const sigOf = (rows) => rows.map((r) => linesOf(r).join('/')).join('|');
+
+  /** Chu cac dong ket qua dang hien (de ghi nhat ky). */
+  const textsNear = (input, dialog) => tagResults(input, dialog).map((r) => linesOf(r).join(' / ')).slice(0, 6);
 
   /** Go tung ky tu nhu nguoi go: o tim cua Instagram co the chi tim khi thay phim go. */
   async function typeSlow(input, text) {
@@ -898,16 +901,34 @@
         if (!input) { addLog(`Bam vao anh nhung khong mo o tim nguoi de tag — ${describeScreen()}`, 'warn'); break; }
 
         await pause(300);
+        const sigBefore = sigOf(tagResults(input, d));      // goi y co san truoc khi go: khong duoc lay nham
         await typeSlow(input, u);
-        let hit = null;
-        await until(() => (hit = tagResult(u, input, d)), 10000, 400);
+
+        // Uu tien dong dung ten. Khong co (ten tick xanh, chu dac biet...) thi lay
+        // KET QUA DAU TIEN — nhung chi khi danh sach da doi theo chu vua go va dung yen.
+        const t0 = Date.now();
+        let hit = null, first = false, lastSig = '', stableAt = Date.now();
+        await until(() => {
+          const rows = tagResults(input, d);
+          const exact = rows.find((row) => isUserRow(row, u));
+          if (exact) { hit = exact; return true; }
+          const sig = sigOf(rows);
+          if (sig !== lastSig) { lastSig = sig; stableAt = Date.now(); }
+          if (rows.length && sig !== sigBefore && Date.now() - t0 > 2500 && Date.now() - stableAt > 1200) {
+            hit = rows.find((row) => (linesOf(row)[0] || '').includes(u)) || rows[0];
+            first = true;
+            return true;
+          }
+          return false;
+        }, 12000, 300);
         if (!hit) {
           addLog(`Khong tim thay @${u} de tag. O tim dang co "${input.value}" ` +
             `(${input.getAttribute('placeholder') || input.getAttribute('aria-label') || 'khong nhan'}); ` +
-            `quanh o tim dang hien: ${textsNear(input).join(' | ') || '(khong co gi)'}`, 'warn');
+            `ket qua dang hien: ${textsNear(input, d).join(' | ') || '(khong co gi)'}`, 'warn');
           await typeSlow(input, '');
           continue;
         }
+        if (first) addLog(`Khong thay dong dung ten @${u}, lay ket qua dau tien: "${linesOf(hit).join(' / ')}"`, 'warn');
         pressRow(hit);
         if (await until(() => !shown(input), 4000)) done++;
         else addLog(`Da bam vao @${u} trong ket qua nhung o tim van mo: "${linesOf(hit).join(' / ')}"`, 'warn');
@@ -1010,7 +1031,7 @@
       if (!cap) {
         throw fatal(s.captionSource === 'own'
           ? 'O "Cau cua minh" dang trong. Go cau khen vao, hoac chon nguon "Kho co san".'
-          : `Chua nap duoc kho cau khen (${BANK}). Bam Reload extension o chrome://extensions roi F5 trang nay.`);
+          : `Chua nap duoc kho cau khen (${BANK}). Nhan F5 tab Instagram nay; van loi thi bam Reload extension o chrome://extensions roi F5.`);
       }
       const caption = buildCaption(cap.text, s.suffix);
       const bad = captionProblems(caption);
@@ -1261,7 +1282,7 @@
     if (!cap) {
       throw fatal(state.settings.captionSource === 'own'
         ? 'O "Cau cua minh" dang trong. Go cau khen vao, hoac chon nguon "Kho co san".'
-        : `Chua nap duoc kho cau khen (${BANK}). Bam Reload extension o chrome://extensions roi F5 trang nay.`);
+        : `Chua nap duoc kho cau khen (${BANK}). Nhan F5 tab Instagram nay; van loi thi bam Reload extension o chrome://extensions roi F5.`);
     }
     const text = buildCaption(cap.text, state.settings.cmtSuffix);
     const bad = captionProblems(text);
